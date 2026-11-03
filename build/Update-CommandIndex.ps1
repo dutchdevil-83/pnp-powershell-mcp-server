@@ -1,11 +1,11 @@
-#Requires -Version 7.4
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-Regenerates data/pnp-index.json, the search corpus, from the installed PnP.PowerShell module. Run before a release.
+Regenerates data/pnp-index.json, the search corpus, from the installed legacy PnP module. Run in Windows PowerShell 5.1 before a release.
 
 .DESCRIPTION
 Unlike Update-VendoredData.ps1 this reads the module on this machine rather than GitHub, so
-PnP.PowerShell must be installed. The corpus it emits feeds BM25 search and parameter validation.
+SharePointPnPPowerShellOnline must be installed in Windows PowerShell 5.1. The corpus it emits feeds BM25 search and parameter validation.
 
 Parameter sets reference parameters by index, which keeps the file roughly a third of the size
 that repeating every name would cost.
@@ -13,19 +13,19 @@ that repeating every name would cost.
 [CmdletBinding()]
 param(
     [string] $OutputDirectory = (Join-Path $PSScriptRoot '..' 'data'),
-    [string] $DocsUrlTemplate = 'https://pnp.github.io/powershell/cmdlets/{name}.html',
+    [string] $DocsUrlTemplate = '',
     [int] $MaxDescriptionChars = 400
 )
 
 $ErrorActionPreference = 'Stop'
 
-$module = Get-Module -ListAvailable PnP.PowerShell | Sort-Object Version -Descending | Select-Object -First 1
+$module = Get-Module -ListAvailable SharePointPnPPowerShellOnline | Sort-Object Version -Descending | Select-Object -First 1
 if (-not $module) {
-    throw "PnP.PowerShell is not installed. Run 'Install-Module PnP.PowerShell -Scope CurrentUser' first."
+    throw "SharePointPnPPowerShellOnline is not installed. Run 'Install-Module SharePointPnPPowerShellOnline -Scope CurrentUser' first."
 }
 
-Import-Module PnP.PowerShell -ErrorAction Stop
-Write-Host "Indexing PnP.PowerShell $($module.Version) from $($module.ModuleBase)"
+Import-Module SharePointPnPPowerShellOnline -DisableNameChecking -ErrorAction Stop
+Write-Host "Indexing SharePointPnPPowerShellOnline $($module.Version) from $($module.ModuleBase)"
 
 $common = [System.Management.Automation.Cmdlet]::CommonParameters + [System.Management.Automation.Cmdlet]::OptionalCommonParameters
 
@@ -80,12 +80,12 @@ function Get-DynamicParameters($Command) {
 # Aliases carry no verb or noun and name superseded cmdlets (AzureAD -> EntraID), so they are
 # recorded for resolution but kept out of the corpus rather than offered as search results.
 $aliases = [ordered]@{}
-foreach ($alias in Get-Command -Module PnP.PowerShell -CommandType Alias | Sort-Object Name) {
+foreach ($alias in Get-Command -Module SharePointPnPPowerShellOnline -CommandType Alias | Sort-Object Name) {
     $target = if ($alias.ResolvedCommand) { [string]$alias.ResolvedCommand.Name } else { [string]$alias.Definition }
     if ($target) { $aliases[$alias.Name] = $target }
 }
 
-$indexed = foreach ($command in Get-Command -Module PnP.PowerShell -CommandType Cmdlet, Function | Sort-Object Name) {
+$indexed = foreach ($command in Get-Command -Module SharePointPnPPowerShellOnline -CommandType Cmdlet, Function | Sort-Object Name) {
     $help = Get-Help $command.Name -ErrorAction SilentlyContinue
     $split = Split-Synopsis ([string]$help.Synopsis)
 
@@ -147,7 +147,7 @@ $indexed = foreach ($command in Get-Command -Module PnP.PowerShell -CommandType 
 # Depth 8 against a structure that nests 6 deep. Raising it further costs minutes of serialization
 # for no extra data; VendoredIndexTests asserts nothing was dropped.
 $json = [ordered]@{
-    source          = 'Get-Command and Get-Help against the installed PnP.PowerShell module'
+    source          = 'Get-Command and Get-Help against the installed SharePointPnPPowerShellOnline module'
     moduleVersion   = [string]$module.Version
     docsUrlTemplate = $DocsUrlTemplate
     aliases         = $aliases
@@ -155,7 +155,7 @@ $json = [ordered]@{
 } | ConvertTo-Json -Depth 8 -Compress
 
 $path = Join-Path $OutputDirectory 'pnp-index.json'
-$json | Set-Content $path -Encoding utf8NoBOM
+[System.IO.File]::WriteAllText($path, $json, [System.Text.UTF8Encoding]::new($false))
 
 $withSynopsis = @($indexed | Where-Object { $_.s }).Count
 $withExamples = @($indexed | Where-Object { $_.e }).Count

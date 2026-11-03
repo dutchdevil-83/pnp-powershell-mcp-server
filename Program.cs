@@ -8,17 +8,11 @@ using PnPPowerShell.MCPServer.Tools;
 
 // Placed in the model's context by the host before the first tool call; kept under 1,500 characters.
 const string ServerInstructions =
-    "PnP PowerShell for SharePoint Online and Microsoft 365. " +
+    "Legacy SharePoint PnP commands through SharePointPnPPowerShellOnline in Windows PowerShell 5.1. " +
     "Before composing any Connect-PnPOnline, run pnp_diagnose_connection with the site you are targeting, " +
-    "and run the command it gives you. Do not compose a connect from memory, and never assume an environment " +
-    "variable, an app registration or a persisted login exists; the report says which exist here.\n" +
-    "Registering an app is a decision that leaves an app in someone's tenant. Ask whether the user wants " +
-    "delegated (Register-PnPEntraIDAppForInteractiveLogin) or application (Register-PnPEntraIDApp) before " +
-    "handing out either, and say what the default grant is before the command runs: permissions are optional " +
-    "on both cmdlets, and when none are given each quietly registers full control of every site in the tenant. " +
-    "Do not ask which scopes the user wants; name the default and ask whether it is what they want.\n" +
-    "A first-time sign-in opens a browser and waits for a person. That prompt is invisible from inside this " +
-    "conversation, so the call blocks until it times out; hand the commands to the user instead of running them.\n" +
+    "follow its compatibility guidance, and do not assume modern PnP.PowerShell registration commands, " +
+    "persisted-login files, or authentication switches work in this archived module. Confirm the target and " +
+    "authentication method with the user before connecting.\n" +
     "After connecting, verify with pnp_get_connection_status and say what you are connected to. " +
     "pnp_get_best_practices holds the long form.";
 
@@ -27,7 +21,7 @@ var builder = Host.CreateApplicationBuilder(args);
 // Configure all logs to go to stderr (stdout is used for the MCP protocol messages).
 builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 
-// Holds the long-lived pwsh sessions the tools execute against, so a PnP connection survives
+// Holds the long-lived Windows PowerShell sessions the tools execute against, so a PnP connection survives
 // across tool calls. Singleton: the sessions are the server's state, not a per-request concern.
 builder.Services.AddSingleton<PowerShellSessionManager>();
 

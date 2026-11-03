@@ -4,6 +4,7 @@ using PnPPowerShell.MCPServer.Models;
 using PnPPowerShell.MCPServer.Services;
 using System.Collections.Concurrent;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
@@ -40,12 +41,9 @@ internal partial class PnPPowerShellTools
     internal static readonly string SignInTimedOut = $"""
         Error: The sign-in did not finish within {SignInTimeout.TotalMinutes:0.#} minutes and the session was terminated. Nothing is connected.
 
-        A sign-in that runs this long is waiting for a person: a browser prompt or a device code that nobody
-        answered. That prompt cannot be seen from this conversation, so waiting longer would not have helped.
-
-        Run 'pnp_diagnose_connection' with the site you are targeting. It reports what this machine can sign in
-        with, and if a sign-in has to happen interactively, hand that command to the user to run in their own
-        PowerShell 7 terminal with -PersistLogin so later connects need no prompt.
+        A sign-in that runs this long may be waiting for a person or a browser interaction the server host
+        cannot complete. The terminated session has lost its connection. Run 'pnp_diagnose_connection', check
+        the installed legacy Connect-PnPOnline help, and use an authentication method supported by this host.
         """;
 
     // Anchored, and no separator that can run a second command: ; newline | & && ||. A chained connect
@@ -71,31 +69,24 @@ internal partial class PnPPowerShellTools
     // script actually saw rather than assuming the command working means the module is there.
     // The version is taken lazily up to an optional trailing full stop: \S+ swallows the one ending the
     // sentence, and reported "3.4.1." as the installed version.
-    [GeneratedRegex(@"^Installed PnP\.PowerShell (\S+?)\.?(?=\s|$)", RegexOptions.Multiline | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^Installed SharePointPnPPowerShellOnline (\S+?)\.?(?=\s|$)", RegexOptions.Multiline | RegexOptions.CultureInvariant)]
     private static partial Regex InstalledVersionRegex();
 
     /// <summary>The exact install command, so the message and the run cannot describe different things.</summary>
-    internal static string InstallModuleCommand(bool prerelease) =>
-        "Install-Module -Name PnP.PowerShell -Scope CurrentUser -Force -AllowClobber" +
-        (prerelease ? " -AllowPrerelease" : string.Empty);
+    internal static string InstallModuleCommand(bool prerelease) => PowerShellRuntime.InstallModuleCommand;
 
     /// <summary>What to return when setup is not allowed: the command the user runs by hand instead.</summary>
     internal static string SetupDisabledMessage(bool prerelease)
     {
-        // The command already carries -AllowPrerelease when asked, so only the released path needs the hint.
-        var prereleaseHint = prerelease
-            ? string.Empty
-            : "Add -AllowPrerelease to get the latest pre-release build instead of the released one. ";
-
         return $"""
             Environment setup is disabled, so nothing was installed and your machine was not changed. This
             server installs software only when you opt in: set PNP_MCP_ALLOW_SETUP=true and call this tool
-            again, or run this yourself in a PowerShell 7 terminal:
+            again, or run this yourself in Windows PowerShell 5.1:
 
               {InstallModuleCommand(prerelease)}
 
-            {prereleaseHint}This installs the PnP.PowerShell module only; it does not sign you in. After it
-            finishes, call 'pnp_diagnose_connection' with your site to see how to connect.
+            This installs the archived SharePointPnPPowerShellOnline module only; it does not sign you in.
+            After it finishes, call 'pnp_diagnose_connection' with your site to see how to connect.
             """;
     }
 
@@ -294,10 +285,10 @@ internal partial class PnPPowerShellTools
                 try { $__pnpHelpUri = ($ExecutionContext.InvokeCommand.GetCommand($__pnpName, [System.Management.Automation.CommandTypes]::All)).HelpUri } catch { $__pnpHelpUri = $null }
                 if (-not [string]::IsNullOrWhiteSpace($__pnpHelpUri)) {
                   Write-Output "ONLINE DOCUMENTATION: $__pnpHelpUri"
-                  Write-Output "NOTE: This cmdlet is not in this server's vendored index, so it is newer than this build. The link above comes from your installed module."
+                  Write-Output "NOTE: This cmdlet is not in this server's legacy command index. Verify its syntax against the installed module's local help."
                 } else {
-                  Write-Output "NOTE: This cmdlet reports no documentation URL, which usually means an older PnP.PowerShell build (HelpUri is populated in current versions)."
-                  Write-Output "FALLBACK: Search https://pnp.github.io/powershell/ for '$__pnpName' to find its page, or search the web for 'PnP PowerShell $__pnpName'. Do not hand-assemble a docs URL -- the path pattern is not guaranteed. Updating the module with 'Update-Module PnP.PowerShell' also restores the link."
+                  Write-Output "NOTE: The legacy module does not expose a cmdlet-specific documentation URL."
+                  Write-Output "FALLBACK: Use the local help and syntax from this result, or search the archived PnP-PowerShell repository for '$__pnpName'. Do not use modern-module documentation without checking that the command exists in this legacy module."
                 }
                 Write-Output ''
               }
@@ -342,10 +333,9 @@ internal partial class PnPPowerShellTools
                 PnP PowerShell commands follow the pattern: Verb-PnPNoun (e.g., Get-PnPWeb, Set-PnPList, Add-PnPListItem).
                 Use 'pnp_search_commands' to find the correct command name.
 
-                Installing, updating or registering is not one of those: Install-Module, Update-Module and
-                Register-PnPEntraIDApp* change the user's machine or tenant rather than run against a connection,
-                so this server does not run them. Show the command to the user to run in their own PowerShell 7
-                terminal instead of looking for a cmdlet here.
+                Installing or updating a module is not one of those: Install-Module and Update-Module change
+                the user's machine rather than run against a connection, so this server does not run them. Use
+                pnp_setup_environment for the legacy module, or ask the user to run their approved command.
                 """;
         }
 
@@ -604,11 +594,11 @@ internal partial class PnPPowerShellTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(ConnectionDiagnosis))]
-    [Description("Diagnoses a broken or unfamiliar machine and reports whether its environment is set up, and answers how to sign in to it. Verifies everything that must be true before anything can run: pwsh installed and on PATH, the PnP.PowerShell module present and current enough, whether this session is connected, and which app registration, persisted login or certificate this machine can actually authenticate with. Every failing check names its cause and the next command to run, filling in every value the machine's own state can supply. Call it before the first Connect-PnPOnline rather than composing one from memory, and whenever something is wrong or fails for a reason that is not obvious.")]
+    [Description("Checks for Windows PowerShell 5.1 and the archived SharePointPnPPowerShellOnline module, inspects this session's PnP connection, and provides a legacy-compatible connection suggestion. It does not inspect modern PnP.PowerShell credential stores or assume an authentication method. Call it before Connect-PnPOnline and when a command fails unexpectedly.")]
     public static async Task<CallToolResult> DiagnosePnpConnection(
         PowerShellSessionManager sessions,
         [Description("Session to inspect (default: \"default\")")] string? sessionId = null,
-        [Description("The SharePoint site the caller wants to work against, e.g. \"https://contoso.sharepoint.com/sites/marketing\". Given one, the report names the exact connect command for that host instead of a template.")] string? targetUrl = null,
+        [Description("The SharePoint Online site to connect to, e.g. \"https://contoso.sharepoint.com/sites/marketing\". Given one, the report uses it in the legacy Connect-PnPOnline suggestion.")] string? targetUrl = null,
         CancellationToken cancellationToken = default)
     {
         // Spliced into commands the report tells the model to run, so nothing PowerShell would parse gets through.
@@ -978,10 +968,10 @@ internal partial class PnPPowerShellTools
         OpenWorld = true,
         UseStructuredContent = true,
         OutputSchemaType = typeof(SetupResult))]
-    [Description("Installs the PnP.PowerShell module for the current user so PnP cmdlets can run, choosing the released build or the latest pre-release. It installs only that module: it never signs in, never touches the tenant, and creates no app registration. For safety it installs only when PNP_MCP_ALLOW_SETUP=true; otherwise it returns the exact Install-Module command to run by hand. Use it when the PnP.PowerShell module is not installed.")]
+    [Description("Installs the archived SharePointPnPPowerShellOnline module for the current user. It does not sign in or touch a tenant, and runs only when PNP_MCP_ALLOW_SETUP=true; otherwise it returns the install command to run by hand. Requires Windows PowerShell 5.1.")]
     public static async Task<CallToolResult> SetupEnvironment(
         PowerShellSessionManager sessions,
-        [Description("Install the latest pre-release build instead of the released one (adds -AllowPrerelease). Ask the user which they want. Default: false.")] bool prerelease = false,
+        [Description("Retained for compatibility; the archived SharePointPnPPowerShellOnline module has no pre-release channel.")] bool prerelease = false,
         [Description("Session to run the install in (default: \"default\")")] string? sessionId = null,
         CancellationToken cancellationToken = default)
     {
@@ -998,31 +988,94 @@ internal partial class PnPPowerShellTools
             return Report(allowed: false, version: null, SetupDisabledMessage(prerelease));
         }
 
-        // pwsh has to exist before a module can be installed into it.
+        // Windows PowerShell has to exist before the legacy module can be installed.
         var environment = await ConnectionPreflight.ProbeEnvironmentAsync(cancellationToken);
 
         if (environment.PwshVersion is null)
         {
             return Report(allowed: true, version: null, $"""
-                Error: PowerShell 7 (pwsh) is not available, so the PnP.PowerShell module cannot be installed. {environment.ProbeError}
-                Install PowerShell 7 first from https://aka.ms/powershell, then call this tool again.
-                """);
+                Error: Windows PowerShell 5.1 is not available, so the SharePointPnPPowerShellOnline module cannot be installed. {environment.ProbeError}
+                Enable or repair Windows PowerShell 5.1, then call this tool again.
+            """);
         }
 
         var script = $$"""
             $ErrorActionPreference = 'Stop'
             try {
               {{InstallModuleCommand(prerelease)}}
-              $__pnpMod = Get-Module -ListAvailable -Name PnP.PowerShell | Sort-Object Version -Descending | Select-Object -First 1
-              if ($__pnpMod) { "Installed PnP.PowerShell $($__pnpMod.Version). Next: call pnp_diagnose_connection with your site to see how to connect." }
-              else { "Error: the install command reported success but PnP.PowerShell is still not visible. Check the PowerShell 7 module path." }
+              $__pnpMod = Get-Module -ListAvailable -Name SharePointPnPPowerShellOnline | Sort-Object Version -Descending | Select-Object -First 1
+              if ($__pnpMod) { "Installed SharePointPnPPowerShellOnline $($__pnpMod.Version). Next: call pnp_diagnose_connection with your site to see how to connect." }
+              else { "Error: the install command reported success but SharePointPnPPowerShellOnline is still not visible. Check the Windows PowerShell module path." }
             } catch {
               "Error: $($_.Exception.Message)"
             }
             Remove-Variable -Name __pnpMod -ErrorAction SilentlyContinue
             """;
 
-        var result = await sessions.Get(sessionId).ExecuteAsync(script, SetupTimeout, cancellationToken, "setup-environment");
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = PowerShellRuntime.ExecutablePath,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        startInfo.ArgumentList.Add("-NoLogo");
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add(script);
+
+        if (SessionTranscript.IsReplaying)
+        {
+            var replayed = SessionTranscript.Replay(script, "setup-environment");
+            var replayVersion = InstalledVersionRegex().Match(replayed);
+            return Report(allowed: true, replayVersion.Success ? replayVersion.Groups[1].Value : null, replayed);
+        }
+        string result;
+        Process? process = null;
+        try
+        {
+            process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return Report(allowed: true, version: null, "Error: Windows PowerShell could not be started.");
+            }
+
+            process.StandardInput.Close();
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(SetupTimeout);
+            var stdout = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            var stderr = process.StandardError.ReadToEndAsync(timeoutCts.Token);
+            await process.WaitForExitAsync(timeoutCts.Token);
+            result = (await stdout).Trim();
+            var error = (await stderr).Trim();
+            if (process.ExitCode != 0)
+            {
+                result = $"Error: The module install process exited with code {process.ExitCode}.\n{error}\n{result}".Trim();
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            TerminateSetupProcess(process);
+            return Report(allowed: true, version: null, $"Error: Module installation exceeded {SetupTimeout.TotalMinutes:0} minutes and was cancelled.");
+        }
+        catch (OperationCanceledException)
+        {
+            TerminateSetupProcess(process);
+            throw;
+        }
+        catch (Exception ex) when (ex is Win32Exception or PlatformNotSupportedException)
+        {
+            return Report(allowed: true, version: null, $"Error: Could not start Windows PowerShell: {ex.Message}");
+        }
+        finally
+        {
+            process?.Dispose();
+        }
         ConnectionPreflight.ForgetProbe();
 
         // Read back from what the install reported, not from the fact that it ran: the script itself
@@ -1032,6 +1085,29 @@ internal partial class PnPPowerShellTools
         return Report(allowed: true, installed.Success ? installed.Groups[1].Value : null, result);
     }
 
+    private static void TerminateSetupProcess(Process? process)
+    {
+        if (process is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // The process exited between the check and the kill.
+        }
+        catch (Win32Exception)
+        {
+            // The OS rejected termination; the cancellation result still reports the timeout.
+        }
+    }
     [McpServerTool(
         Name = "pnp_ping",
         ReadOnly = true,
@@ -1039,19 +1115,19 @@ internal partial class PnPPowerShellTools
         OpenWorld = false,
         UseStructuredContent = true,
         OutputSchemaType = typeof(ServerHealth))]
-    // Deliberately does not repeat "pwsh installed" or "module available": this tool and
+    // Deliberately does not repeat "PowerShell installed" or "module available": this tool and
     // pnp_diagnose_connection both report readiness, and while their wording overlapped the shorter
     // description here outranked the longer one there for questions that belong to diagnosis.
     [Description("Returns the server version, uptime, read-only mode status, and active session count, plus (unless includeReadiness is false) a one-line readiness flag. Use this as a lightweight health check to confirm the server itself is responsive.")]
     public static async Task<CallToolResult> Ping(
         PowerShellSessionManager sessions,
-        [Description("Also probe whether pwsh and the PnP.PowerShell module are installed (launches a short-lived pwsh). Default: true.")] bool includeReadiness = true,
+        [Description("Also probe whether Windows PowerShell 5.1 and SharePointPnPPowerShellOnline are installed. Default: true.")] bool includeReadiness = true,
         CancellationToken cancellationToken = default)
     {
         var version = typeof(PnPPowerShellTools).Assembly.GetName().Version;
         var uptime = DateTimeOffset.UtcNow - ServerStartedUtc;
 
-        // The readiness probe launches a short-lived pwsh, so it is skipped when the caller only wants
+        // The readiness probe launches a short-lived Windows PowerShell process, so it is skipped when the caller only wants
         // to know the server is alive.
         var environment = includeReadiness ? await ConnectionPreflight.ProbeEnvironmentAsync(cancellationToken) : null;
 
@@ -1098,12 +1174,12 @@ internal partial class PnPPowerShellTools
 
         if (!pwsh)
         {
-            return "PowerShell 7 (pwsh) is not on PATH, so no PnP cmdlet can run. Install it from https://aka.ms/powershell.";
+            return "Windows PowerShell 5.1 could not be started from its standard path, so no legacy PnP cmdlet can run.";
         }
 
         return module
-            ? $"pwsh present, PnP.PowerShell {health.PnpModuleVersion} installed"
-            : "pwsh present, but the PnP.PowerShell module is not installed. Use 'pnp_setup_environment' or run Install-Module yourself.";
+            ? $"Windows PowerShell present, SharePointPnPPowerShellOnline {health.PnpModuleVersion} installed"
+            : "Windows PowerShell present, but SharePointPnPPowerShellOnline is not installed. Use 'pnp_setup_environment' or run Install-Module yourself.";
     }
 
     [McpServerTool(

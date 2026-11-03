@@ -1,5 +1,6 @@
 using ModelContextProtocol.Protocol;
 using System.Diagnostics;
+using PnPPowerShell.MCPServer.Services;
 
 // Several tests set process-wide environment variables, and the integration tests each drive a pwsh
 // child process, so running them serially keeps both deterministic.
@@ -14,7 +15,7 @@ internal static class ToolResults
         string.Concat(result.Content.OfType<TextContentBlock>().Select(b => b.Text));
 }
 
-/// <summary>Detects once whether pwsh and the PnP.PowerShell module are present.</summary>
+/// <summary>Detects once whether Windows PowerShell and the legacy PnP module are present.</summary>
 internal static class TestEnvironment
 {
     private static readonly Lazy<bool> Available = new(Probe);
@@ -28,7 +29,7 @@ internal static class TestEnvironment
             // stderr is not redirected: an unread redirected pipe can fill and deadlock the child.
             var startInfo = new ProcessStartInfo
             {
-                FileName = "pwsh",
+                FileName = PowerShellRuntime.ExecutablePath,
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
@@ -37,7 +38,7 @@ internal static class TestEnvironment
             startInfo.ArgumentList.Add("-NoProfile");
             startInfo.ArgumentList.Add("-NonInteractive");
             startInfo.ArgumentList.Add("-Command");
-            startInfo.ArgumentList.Add("if (Get-Module -ListAvailable -Name PnP.PowerShell) { 'YES' } else { 'NO' }");
+            startInfo.ArgumentList.Add("if (Get-Module -ListAvailable -Name SharePointPnPPowerShellOnline) { 'YES' } else { 'NO' }");
 
             using var process = Process.Start(startInfo);
             if (process is null)
@@ -46,7 +47,7 @@ internal static class TestEnvironment
             }
 
             // Read asynchronously and bound the wait: ReadToEnd blocks until stdout closes, which a
-            // hung pwsh never does, and that would stall the whole test run rather than skip a test.
+            // hung Windows PowerShell never does, and that would stall the whole test run rather than skip a test.
             var output = process.StandardOutput.ReadToEndAsync();
 
             if (!process.WaitForExit(120_000))
@@ -73,14 +74,14 @@ internal static class TestEnvironment
     }
 }
 
-/// <summary>A fact that skips itself when pwsh or PnP.PowerShell is unavailable, as on a bare CI runner.</summary>
+/// <summary>A fact that skips itself when Windows PowerShell or the legacy PnP module is unavailable.</summary>
 public sealed class RequiresPnPFactAttribute : FactAttribute
 {
     public RequiresPnPFactAttribute()
     {
         if (!TestEnvironment.PnPAvailable)
         {
-            Skip = "Requires pwsh with the PnP.PowerShell module installed.";
+            Skip = "Requires Windows PowerShell 5.1 with SharePointPnPPowerShellOnline installed.";
         }
     }
 }
@@ -114,8 +115,8 @@ public sealed class RequiresSymlinksFactAttribute : FactAttribute
 }
 
 /// <summary>
-/// The mirror of <see cref="RequiresPnPFactAttribute"/>: runs only where pwsh or PnP.PowerShell is
-/// absent. The cold-start states cannot be manufactured on a developer machine that has both — pwsh
+/// The mirror of <see cref="RequiresPnPFactAttribute"/>: runs only where Windows PowerShell or the legacy module is
+/// absent. The cold-start states cannot be manufactured on a developer machine that has both — Windows PowerShell
 /// re-adds the default module paths, so PSModulePath cannot hide the module, and uninstalling it is
 /// not something a test may do. A bare CI runner is that clean container, so the check runs there.
 /// </summary>
@@ -125,7 +126,7 @@ public sealed class BarePnPFactAttribute : FactAttribute
     {
         if (TestEnvironment.PnPAvailable)
         {
-            Skip = "Runs only where pwsh or PnP.PowerShell is missing, which is the state it asserts.";
+            Skip = "Runs only where SharePointPnPPowerShellOnline is missing, which is the state it asserts.";
         }
     }
 }

@@ -5,7 +5,7 @@ namespace PnPPowerShell.MCPServer.Services;
 
 /// <summary>
 /// The searchable cmdlet corpus: synopsis, parameters, parameter sets and examples for every cmdlet in
-/// the module this server was built against. Scored with BM25 in process, so search costs no pwsh
+/// the legacy module this server was built against. Scored with BM25 in process, so search costs no PowerShell
 /// round-trip. <see cref="CommandIndex"/> remains the authority on names and documentation URLs.
 /// </summary>
 internal static class CommandCorpus
@@ -46,7 +46,7 @@ internal static class CommandCorpus
     public static string? ModuleVersion => Root.Value.ModuleVersion;
 
     public static string Provenance =>
-        $"Indexed from PnP.PowerShell {ModuleVersion ?? "unknown"}. " +
+        $"Indexed from SharePointPnPPowerShellOnline {ModuleVersion ?? "unknown"}. " +
         "Your installed module may differ; 'pnp_get_command_docs' reads the module you actually have.";
 
     /// <summary>The indexed cmdlet, following a superseded alias to its current name. Null when unknown.</summary>

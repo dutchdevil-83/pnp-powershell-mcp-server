@@ -65,9 +65,9 @@ internal sealed record PreflightFacts(
 /// <summary>Answers the three questions that decide whether a command can run at all.</summary>
 internal static class ConnectionPreflight
 {
-    private const string PwshMissingCause = "'pwsh' is not on PATH, so no PnP PowerShell command can run.";
+    private const string PwshMissingCause = "Windows PowerShell 5.1 could not be started from its standard Windows path.";
 
-    private const string ModuleMissingCause = "The PnP.PowerShell module is not installed for this user.";
+    private const string ModuleMissingCause = "The SharePointPnPPowerShellOnline module is not installed for this user.";
 
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(90);
 
@@ -75,7 +75,7 @@ internal static class ConnectionPreflight
 
     private const string EnvironmentProbeScript = """
         $ErrorActionPreference = 'SilentlyContinue'
-        $mods = @(Get-Module -ListAvailable -Name PnP.PowerShell | Sort-Object Version -Descending)
+        $mods = @(Get-Module -ListAvailable -Name SharePointPnPPowerShellOnline | Sort-Object Version -Descending)
         [PSCustomObject]@{
           pwshVersion = $PSVersionTable.PSVersion.ToString()
           pwshPath = (Get-Process -Id $PID).Path
@@ -94,23 +94,11 @@ internal static class ConnectionPreflight
           $__pnpDiag.connectionType = [string]$__pnpC.ConnectionType
           $__pnpDiag.connectionMethod = [string]$__pnpC.ConnectionMethod
           if ([string]$__pnpC.ConnectionMethod -notin @('ManagedIdentity','AzureADWorkloadIdentity')) { $__pnpDiag.clientId = $__pnpC.ClientId }
-          if ($__pnpC.PSCredential) { $__pnpDiag.account = $__pnpC.PSCredential.UserName }
+          if ($__pnpC.Credentials) { $__pnpDiag.account = $__pnpC.Credentials.UserName }
         } catch { }
-        if ($__pnpDiag.connected) {
-          try {
-            $__pnpTok = Get-PnPAccessToken -Decoded -ErrorAction Stop
-            if ($__pnpTok) {
-              foreach ($__pnpClaim in @('upn','preferred_username','name')) {
-                if (-not $__pnpDiag.account) { $__pnpDiag.account = $__pnpTok.Claims | Where-Object { $_.Type -eq $__pnpClaim } | Select-Object -First 1 -ExpandProperty Value }
-              }
-              $__pnpDiag.app = $__pnpTok.Claims | Where-Object { $_.Type -eq 'app_displayname' } | Select-Object -First 1 -ExpandProperty Value
-              $__pnpDiag.scopes = ($__pnpTok.Claims | Where-Object { $_.Type -in @('scp','roles') } | Select-Object -ExpandProperty Value) -join ' '
-            }
-          } catch { }
-        }
         try { $__pnpDiag.helpUri = ($ExecutionContext.InvokeCommand.GetCommand('Get-PnPWeb', [System.Management.Automation.CommandTypes]::All)).HelpUri } catch { }
         [PSCustomObject]$__pnpDiag | ConvertTo-Json -Depth 4 -Compress
-        Remove-Variable -Name __pnpDiag, __pnpC, __pnpTok, __pnpClaim -ErrorAction SilentlyContinue
+        Remove-Variable -Name __pnpDiag, __pnpC -ErrorAction SilentlyContinue
         """;
 
     public static async Task<PreflightFacts> GatherAsync(
@@ -209,7 +197,7 @@ internal static class ConnectionPreflight
 
         report.AppendLine();
         report.AppendLine(steps.Any(s => s.UserRuns)
-            ? "   Ask the user to run the steps marked USER in their own PowerShell 7 terminal, pasting each command as written. " +
+            ? "   Ask the user to run the steps marked USER in their own Windows PowerShell 5.1 terminal, pasting each command as written. " +
               "This server can run the steps marked SERVER from here; each says which tool."
             : "   This server can run every step from here; each says which tool.");
         report.AppendLine();
@@ -244,13 +232,13 @@ internal static class ConnectionPreflight
         if (environment.PwshVersion is not null)
         {
             any = true;
-            yield return $"pwsh {environment.PwshVersion}{(environment.PwshPath is null ? string.Empty : $" at {environment.PwshPath}")}";
+            yield return $"Windows PowerShell {environment.PwshVersion}{(environment.PwshPath is null ? string.Empty : $" at {environment.PwshPath}")}";
         }
 
         if (environment.ModuleVersion is not null)
         {
             any = true;
-            yield return $"PnP.PowerShell {environment.ModuleVersion} is installed";
+            yield return $"{PowerShellRuntime.ModuleName} {environment.ModuleVersion} is installed";
         }
 
         foreach (var login in auth.PersistedLogins.Where(l => l.Enabled))
@@ -285,45 +273,45 @@ internal static class ConnectionPreflight
 
     private static string? RenderPowerShell(StringBuilder report, EnvironmentFacts environment, List<SetupStep> steps)
     {
-        report.AppendLine("1. PowerShell 7 (pwsh)");
+        report.AppendLine("1. Windows PowerShell 5.1");
 
         if (environment.PwshVersion is not null)
         {
-            report.AppendLine($"   OK - pwsh {environment.PwshVersion}{(environment.PwshPath is null ? string.Empty : $" at {environment.PwshPath}")}.");
+            report.AppendLine($"   OK - Windows PowerShell {environment.PwshVersion}{(environment.PwshPath is null ? string.Empty : $" at {environment.PwshPath}")}.");
             return null;
         }
 
         if (environment.ProbeUnavailable)
         {
             report.AppendLine($"   UNKNOWN - {environment.ProbeError}");
-            return "Fix the playback fixture, or unset PNP_MCP_REPLAY_DIR to probe this machine for real. Nothing above describes the real pwsh install.";
+            return "Fix the playback fixture, or unset PNP_MCP_REPLAY_DIR to probe this machine for real. Nothing above describes the real Windows PowerShell install.";
         }
 
         if (!environment.PwshLaunched)
         {
             report.AppendLine($"   FAIL - {PwshMissingCause}");
             steps.Add(new SetupStep(
-                "Install PowerShell 7.4 or later from https://aka.ms/powershell, then restart your MCP client so it picks up the new PATH",
+                "Enable or repair Windows PowerShell 5.1, then restart your MCP client",
                 UserRuns: true,
-                "this server never installs software, and it cannot see the new PATH until the client restarts it"));
+                "this server never installs Windows features or changes machine configuration"));
             return null;
         }
 
         report.AppendLine(
-            "   FAIL - pwsh started but did not report a usable version, so it is installed and broken rather than missing." +
+            "   FAIL - Windows PowerShell started but did not report a usable version, so it is installed and broken rather than missing." +
             (environment.ProbeError is null ? string.Empty : $" It said: {environment.ProbeError}"));
 
-        return "Run 'pwsh -NoProfile -Command $PSVersionTable.PSVersion' in a terminal and fix whatever it reports before using this server; a working install prints a version immediately.";
+        return "Run 'powershell.exe -NoProfile -Command $PSVersionTable.PSVersion' in a terminal and fix whatever it reports before using this server; a working install prints a version immediately.";
     }
 
     private static void RenderModule(StringBuilder report, EnvironmentFacts environment, List<SetupStep> steps, bool skipped)
     {
         report.AppendLine();
-        report.AppendLine("2. PnP.PowerShell module");
+        report.AppendLine($"2. {PowerShellRuntime.ModuleName} module");
 
         if (skipped)
         {
-            report.AppendLine("   SKIPPED - pwsh has to be available before the module can be looked for.");
+            report.AppendLine("   SKIPPED - Windows PowerShell has to be available before the module can be looked for.");
 
             // A missing pwsh already made a step; a broken probe made none, and gets no plan.
             if (steps.Count > 0)
@@ -341,18 +329,16 @@ internal static class ConnectionPreflight
             return;
         }
 
-        report.AppendLine($"   OK - PnP.PowerShell {environment.ModuleVersion} is installed.");
+        report.AppendLine($"   OK - {PowerShellRuntime.ModuleName} {environment.ModuleVersion} is installed.");
 
         if (environment.ModuleVersionCount > 1)
         {
             report.AppendLine(
                 $"   NOTE - {environment.ModuleVersionCount} versions are installed side by side; the session imports {environment.ModuleVersion}. " +
-                "Remove the older ones with Uninstall-Module -Name PnP.PowerShell -AllVersions -Force, then reinstall, if behaviour differs from the docs.");
+                $"Remove older versions with Uninstall-Module -Name {PowerShellRuntime.ModuleName} -AllVersions -Force only if you intend to remove them.");
         }
 
-        report.AppendLine(
-            "   NOTE - This server never reaches the PowerShell Gallery, so it cannot tell you whether that is the newest release. " +
-            "Check with: Find-Module -Name PnP.PowerShell | Select-Object Version");
+        report.AppendLine("   NOTE - This archived legacy module is no longer maintained; the version check confirms only what is installed locally.");
     }
 
     private static SetupStep InstallModuleStep(bool presumed) =>
@@ -389,9 +375,7 @@ internal static class ConnectionPreflight
         if (string.IsNullOrWhiteSpace(session.HelpUri))
         {
             report.AppendLine(
-                "   NOTE - This build of PnP.PowerShell reports no HelpUri for Get-PnPWeb, which means it predates the versions " +
-                "that carry documentation links. 'pnp_get_command_docs' will fall back to a search instead of a direct link. " +
-                "Run: Update-Module -Name PnP.PowerShell -Scope CurrentUser");
+                "   NOTE - The installed legacy module does not report a cmdlet-specific HelpUri; use its local help and syntax output.");
         }
 
         return next;
@@ -422,15 +406,6 @@ internal static class ConnectionPreflight
             report.AppendLine($"   Signing in through app: {session.App ?? "(unnamed)"} ({session.ClientId ?? "client id not exposed"})");
         }
 
-        if (!string.IsNullOrWhiteSpace(session.Scopes))
-        {
-            report.AppendLine($"   Graph token scopes: {session.Scopes}");
-            report.AppendLine(
-                "   NOTE - Those are the scopes on the Microsoft Graph token. PnP acquires a separate token per resource " +
-                "on demand -- Graph, SharePoint, ARM -- so a cmdlet targeting a different resource is governed by that " +
-                "resource's token, not this list.");
-        }
-
         if (string.IsNullOrWhiteSpace(session.Url))
         {
             const string next =
@@ -442,29 +417,16 @@ internal static class ConnectionPreflight
 
         if (!session.Url.Contains("-admin.sharepoint.com", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.Equals(session.ConnectionMethod, "DeviceLogin", StringComparison.OrdinalIgnoreCase))
-            {
-                const string next =
-                    "Ready for site-scoped work only. Tenant-wide cmdlets such as Get-PnPTenantSite will refuse to run, " +
-                    "because a device login is the one auth method PnP will not elevate to the admin site automatically. " +
-                    "For those, reconnect with Connect-PnPOnline -Url https://<tenant>-admin.sharepoint.com -DeviceLogin.";
-
-                report.AppendLine($"   WARN - {next}");
-                return next;
-            }
-
             report.AppendLine(
-                "   NOTE - This is a site connection, not an admin one. Tenant-wide cmdlets such as Get-PnPTenantSite " +
-                "still work from here, because PnP clones the context to https://<tenant>-admin.sharepoint.com on " +
-                "demand, but they need the signed-in account to hold the SharePoint Administrator role. A 403 from " +
-                "one of those is that role missing, not this URL being wrong.");
+                "   NOTE - This is a site connection, not a tenant-admin connection. Some legacy tenant-wide cmdlets " +
+                "may require connecting directly to https://<tenant>-admin.sharepoint.com; check the installed cmdlet help.");
         }
 
         return "Ready. Run your command with 'pnp_run_command'.";
     }
 
 
-    // Own pwsh process, so playback is handled here rather than at the session seam.
+    // Own Windows PowerShell process, so playback is handled here rather than at the session seam.
     internal static async Task<EnvironmentFacts> ProbeEnvironmentAsync(CancellationToken cancellationToken)
     {
         if (SessionTranscript.IsReplaying)
@@ -503,7 +465,7 @@ internal static class ConnectionPreflight
 
     private static readonly TimeSpan ProbeCacheLifetime = TimeSpan.FromMinutes(1);
 
-    // Keyed on PATH, which decides which pwsh answers.
+    // Keyed on the standard Windows PowerShell executable path.
     private static CachedProbe? _healthyProbe;
 
     private sealed record CachedProbe(EnvironmentFacts Facts, string? Path, DateTimeOffset At);
@@ -512,7 +474,7 @@ internal static class ConnectionPreflight
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = "pwsh",
+            FileName = PowerShellRuntime.ExecutablePath,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,

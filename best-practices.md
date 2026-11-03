@@ -8,10 +8,9 @@ Use this flow for reliable execution:
 
 1. **Check you can run anything at all** with `pnp_diagnose_connection`, passing `targetUrl` when you
    know which site the task is about. Make this your first call in a new session: it answers, in one
-   round trip, whether `pwsh` is on `PATH`, whether the `PnP.PowerShell` module is installed, what
-   connection the session holds, and — when there is none — which app registration or persisted login
-   this machine can sign in with. Every failing check names its cause and the exact next command, with
-   no placeholder left in it, so **run the command it gives you rather than composing one**. Use
+   round trip, whether Windows PowerShell 5.1 is available, whether the legacy
+   `SharePointPnPPowerShellOnline` module is installed, and what connection the session holds. It does
+   not inspect credential stores or determine which authentication methods your tenant permits. Use
    `pnp_get_connection_status` instead when you only need to re-check the connection on a session you
    have already diagnosed.
 2. **Search commands** with `pnp_search_commands` to find the right command for your task.
@@ -27,92 +26,16 @@ when looking for a worked example.
 
 ## Finding More About a Cmdlet
 
-Every cmdlet is documented on <https://pnp.github.io/powershell/>, and `pnp_get_command_docs` returns
-two links to that page before the help text:
+`pnp_search_commands` uses an index generated from `SharePointPnPPowerShellOnline`. Use
+`pnp_get_command_docs` to read the help installed with that legacy module, then confirm syntax with
+`Get-Command <Name> -Syntax` in the persistent session. The newer PnP PowerShell documentation may
+describe renamed commands, parameters, or authentication options that the legacy module does not have.
 
-```text
-MARKDOWN DOCUMENTATION (prefer this — the same page in source form, at a fraction of the tokens): https://raw.githubusercontent.com/pnp/powershell/dev/documentation/Get-PnPWeb.md
-HTML DOCUMENTATION: https://pnp.github.io/powershell/cmdlets/Get-PnPWeb.html
-```
+### Rules of thumb
 
-**Fetch the markdown one.** It is the source the HTML page is generated from, so it says the same
-thing without the site chrome, navigation and styling that make the rendered page several times more
-expensive to read. Give the *user* the HTML link, since that is the page they can browse.
-
-The local help returned by `pnp_get_command_docs` is generated from the installed module, so it can
-lag the published page and sometimes omits examples entirely. Reach for the links when the local help
-is not enough.
-
-### Worked example
-
-You need to filter list items server-side and `Get-PnPListItem`'s local help does not explain `-Query`:
-
-1. Find the cmdlet:
-
-   ```jsonc
-   // pnp_search_commands
-   { "query": "list item" }
-   ```
-
-   ```jsonc
-   // structuredContent, ranked most relevant first. `count` always equals commands.length.
-   { "query": "list item", "count": 20, "indexedModuleVersion": "3.4.1",
-     "commands": [
-       { "name": "Get-PnPListItem", "verb": "Get", "noun": "PnPListItem",
-         "synopsis": "Retrieves list items",
-         "parameters": ["List", "Id", "UniqueId", "Query", "PageSize", "Connection"],
-         "docsUrl": "https://pnp.github.io/powershell/cmdlets/Get-PnPListItem.html" }
-       // ... 19 more, elided here
-     ] }
-   ```
-
-   The parameter names are a shortlist, not the full syntax — read the docs before calling.
-
-2. Read the local help:
-
-   ```jsonc
-   // pnp_get_command_docs
-   { "commandName": "Get-PnPListItem" }
-   ```
-
-   The output begins with:
-
-   ```text
-   MARKDOWN DOCUMENTATION (prefer this ...): https://raw.githubusercontent.com/pnp/powershell/dev/documentation/Get-PnPListItem.md
-   HTML DOCUMENTATION: https://pnp.github.io/powershell/cmdlets/Get-PnPListItem.html
-   ```
-
-3. If the parameter is still unclear, **fetch the markdown URL with whatever web-fetch tool the client
-   provides** and read the parameter and examples sections. If no fetch tool is available, give the
-   user the HTML link rather than guessing at the syntax.
-
-4. Build the command from what the page shows, then run it in a small verifiable step.
-
-### When there is no link
-
-The two links above come from an index vendored into this server, so they are there even when `pwsh`
-or the module is not. A cmdlet newer than this build is not in that index; for those,
-`pnp_get_command_docs` falls back to the `HelpUri` your installed module reports, and search results
-carry a `HelpUri` field. When neither is available it almost always means an **older `PnP.PowerShell`
-build** — current versions populate `HelpUri` for effectively every cmdlet — and the tool says so and
-offers the fallback directly in its output.
-
-What to do instead, in order:
-
-1. **Search the docs site** rather than guessing a URL: <https://pnp.github.io/powershell/> has a
-   search box, and a web search for `PnP PowerShell <Cmdlet-Name>` normally lands on the right page.
-2. **Suggest updating the module** if the user keeps hitting it:
-
-   ```powershell
-   Update-Module PnP.PowerShell
-   ```
-
-   Then restart the MCP server, since the module is imported once when a session starts.
-3. **Fall back to the local help** (`pnp_get_command_docs`) and `Get-Command <Name> -Syntax` for the
-   parameter list, and tell the user the online page could not be linked.
-
-Never hand-assemble a documentation URL from the cmdlet name. The path pattern is not guaranteed, and a
-fabricated link that 404s is worse than no link.
+- Do not guess parameter names. Read `pnp_get_command_docs` and check `Get-Command <Name> -Syntax`.
+- Do not assume a modern-module example or online page applies to the legacy module.
+- If local help is incomplete, say so and ask before relying on a modern example.
 
 ### Rules of thumb
 
@@ -125,17 +48,13 @@ fabricated link that 404s is worse than no link.
 
 ## Prerequisites
 
-- **PowerShell 7.4 or above** (`pwsh`) must be installed and available on `PATH`. This server runs PnP PowerShell in a `pwsh` session — if it's missing, tools will return an actionable error telling you to install it.
-- **The `PnP.PowerShell` module** must be installed:
+- **Windows PowerShell 5.1** must be enabled. The server launches it from the standard Windows path.
+- **The archived `SharePointPnPPowerShellOnline` module** must be installed:
   ```powershell
-  Install-Module -Name PnP.PowerShell -Scope CurrentUser -Force -AllowClobber
+  Install-Module -Name SharePointPnPPowerShellOnline -Scope CurrentUser -Force
   ```
-  The module is imported once when a session starts, and a clear error with the install command above is returned if it is missing, instead of a raw PowerShell exception.
-- **`pnp_diagnose_connection` checks both of these**, plus what connection the session holds, in one
-  call. Every failing check names its cause and the exact next command. The `pwsh` and module checks
-  need no tenant and no network, so they still answer on a machine that is not set up yet — which is
-  exactly when they are useful. Once a connection exists, inspecting it asks PnP for a Graph token,
-  so that part does reach Entra ID.
+  It is imported once per session. This module is archived and no longer receives updates.
+- `pnp_diagnose_connection` checks the host, module, and current session without contacting a tenant.
 
 ## Sessions
 
@@ -370,106 +289,21 @@ here — **you are the boundary**, and every result is something a stranger may 
 
 ## Authentication Best Practices
 
-### Ask before you connect
+Run `pnp_diagnose_connection` before the first connection, passing `targetUrl` when known. It checks
+Windows PowerShell 5.1, the installed `SharePointPnPPowerShellOnline` module, and the current session.
+It cannot inspect modern PnP.PowerShell credential stores or determine which authentication methods a
+tenant permits.
 
-**Run `pnp_diagnose_connection` with the site you are targeting, and run the command it gives you.**
+The legacy module has authentication modes that vary by tenant and SharePoint environment. For
+SharePoint Online, `-UseWebLogin` is available in the installed module, but browser support depends on
+the host session. For on-premises environments or unattended access, inspect the installed
+`Connect-PnPOnline` help and get the user's explicit choice before connecting. Never infer or create an
+app registration, never copy credentials into commands, and do not use modern-only options such as
+`-PersistLogin` or `Register-PnPEntraIDApp*` unless the installed legacy module actually exposes them.
 
-```jsonc
-// pnp_diagnose_connection
-{ "targetUrl": "https://contoso.sharepoint.com/sites/marketing" }
-```
-
-Section 4 of the report says what this machine can actually authenticate with — persisted logins, a
-cached token, `ENTRAID_APP_ID` / `ENTRAID_CLIENT_ID` / `AZURE_CLIENT_ID`, a certificate path — and its
-`NEXT STEP` is a complete command with nothing left to fill in.
-
-**Do not compose a connect from memory, and never assume an environment variable is set.** Since
-September 2024 `-ClientId` is required for the interactive, credentials, device-login and
-environment-variable flows — OS login is the one that does not insist — so a connect without one works
-only when a persisted login or one of those three variables supplies it. The report tells you which of
-those exist here, so there is nothing left to guess.
-
-### The first sign-in is not yours to run
-
-A first-time sign-in opens a browser and waits for a person. That prompt is invisible from inside this
-conversation, so the call blocks until it times out and nothing gets connected.
-
-So when the report says `BLOCKED`, hand the commands to the user instead of running them:
-
-```powershell
-# A person signing in: register an app, then connect once
-Register-PnPEntraIDAppForInteractiveLogin -ApplicationName "PnP PowerShell" -Tenant contoso.onmicrosoft.com
-Connect-PnPOnline -Url https://contoso.sharepoint.com/sites/marketing -ClientId <app id> -PersistLogin
-
-# Unattended instead: register an app with a certificate, then use it
-Register-PnPEntraIDApp -ApplicationName "PnP PowerShell" -Tenant contoso.onmicrosoft.com -OutPath . -DeviceLogin
-Connect-PnPOnline -Url https://contoso.sharepoint.com -ClientId <app id> -Tenant contoso.onmicrosoft.com `
-  -CertificatePath .\PnP-PowerShell.pfx -CertificatePassword (Read-Host -AsSecureString)
-```
-
-Both registration cmdlets need an administrator to consent before the app works.
-
-`-PersistLogin` is the part that matters for the interactive path. It records the app id against that
-tenant and caches the token, so afterwards this server connects with **no client id, no browser and no
-prompt** — which is why the report can name a placeholder-free command at all:
-
-```powershell
-Connect-PnPOnline -Url https://contoso.sharepoint.com/sites/marketing
-```
-
-### Registering an app is a decision, and it is not reversible from here
-
-The two registration commands above are not interchangeable, and the choice outlives the conversation
-because it leaves an app in someone's tenant. **Ask which one the user wants before handing out either.**
-
-- `Register-PnPEntraIDAppForInteractiveLogin` creates a public client with no certificate, and its
-  default permissions are all delegated: the app acts as the signed-in person.
-- `Register-PnPEntraIDApp` attaches a certificate and application permissions: the app acts as itself,
-  with nobody signed in.
-
-`### Choosing a method` below tabulates delegated versus application for *connecting*. This is the same
-choice for *registering*, which is the half that leaves something behind.
-
-**Say what the default grant is before the command runs.** Permissions are optional on both cmdlets, and
-when none are given neither refuses: each logs `No permissions specified, using default permissions` and
-registers this set.
-
-| Cmdlet | Default grant |
-| --- | --- |
-| `Register-PnPEntraIDAppForInteractiveLogin` | SharePoint delegated `AllSites.FullControl`, `TermStore.ReadWrite.All`, `User.ReadWrite.All`; Graph delegated `Group.ReadWrite.All`, `User.ReadWrite.All` |
-| `Register-PnPEntraIDApp` | SharePoint **application** `Sites.FullControl.All`, `User.ReadWrite.All`; SharePoint delegated `AllSites.FullControl`; Graph **application** `Group.ReadWrite.All`, `User.ReadWrite.All` |
-
-That is full control of every site in the tenant, granted by a command that succeeds quietly. Do not ask
-which scopes the user wants — most cannot answer that. Name the default and ask whether it is what they
-want. If it is not, narrow it with `-SharePointDelegatePermissions`, `-GraphDelegatePermissions`,
-`-SharePointApplicationPermissions`, `-GraphApplicationPermissions`, `-O365ManagementDelegatePermissions`,
-`-O365ManagementApplicationPermissions`, or `-ResourcePermissions` on `Register-PnPEntraIDApp` for any
-other resource. **Not `-Scopes`**: it is obsolete and throws when combined with any of those.
-
-Consent is not the only right involved. Creating the registration needs the tenant to allow users to
-register applications, or an account holding Application Developer, Application Administrator, Cloud
-Application Administrator or Global Administrator. An administrator then consents to the permissions
-before the app works.
-
-### Choosing a method
-
-| Situation | Method |
-| --- | --- |
-| The report names a persisted login | `Connect-PnPOnline -Url <site>` — nothing else needed |
-| A client id is available, tenant not yet persisted | add `-ClientId <id> -PersistLogin` |
-| Automation, no person present | `-ClientId -Tenant -CertificatePath -CertificatePassword`, or `-Thumbprint` for a certificate already in the Windows store |
-| Hosted in Azure | `-ManagedIdentity` (Azure Functions, Automation runbooks, Cloud Shell only) |
-| Nothing available | hand the user the commands above; it cannot be done from here |
-
-- `-ClientId` and `-Tenant` are both mandatory for certificate auth, and a `.pfx` normally needs
-  `-CertificatePassword` as a `SecureString`.
-- **Never put a credential in a script.** Use a certificate, a managed identity, or environment variables.
-- A device login is the one method PnP will not elevate to the admin site, so tenant-wide cmdlets refuse
-  rather than return 403. Connect straight to `https://<tenant>-admin.sharepoint.com` for those.
-- Changing an app registration's permissions does **not** refresh a persisted token. Run
-  `Disconnect-PnPOnline -ClearPersistedLogin` and sign in again, or the old scopes keep being used.
-- `AADSTS50173`, `AADSTS700082` and `invalid_grant` all mean the cached credential is dead. **Retrying
-  changes nothing** — it has to be cleared and signed in again.
+If authentication fails, read the full module error and use `pnp_get_command_docs Connect-PnPOnline`.
+Ask the tenant administrator to confirm the allowed legacy authentication configuration rather than
+guessing at client IDs, permissions, or cached-login behavior.
 ## Execution Best Practices
 
 ### General Tips

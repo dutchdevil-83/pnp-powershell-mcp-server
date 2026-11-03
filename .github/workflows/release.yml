@@ -2,18 +2,13 @@ name: Release
 
 # Builds and publishes the complete set of NuGet packages for this tool.
 #
-# IMPORTANT — this project packs as a RID-specific .NET tool (see <RuntimeIdentifiers>
+# IMPORTANT — this project packs as a Windows RID-specific .NET tool (see <RuntimeIdentifiers>
 # and <PublishAot> in PnPPowerShell.MCPServer.csproj), which means a release is NOT one
-# package but EIGHT:
+# package but THREE:
 #
 #   PnP.PowerShell.MCPServer                  <- tiny RID-agnostic "wrapper" (no binaries)
-#   PnP.PowerShell.MCPServer.win-x64          <- the actual executable, one per RID
+#   PnP.PowerShell.MCPServer.win-x64          <- the actual executable, one per Windows RID
 #   PnP.PowerShell.MCPServer.win-arm64
-#   PnP.PowerShell.MCPServer.osx-arm64
-#   PnP.PowerShell.MCPServer.osx-x64
-#   PnP.PowerShell.MCPServer.linux-x64
-#   PnP.PowerShell.MCPServer.linux-arm64
-#   PnP.PowerShell.MCPServer.linux-musl-x64
 #
 # `dotnet tool install --global PnP.PowerShell.MCPServer` resolves the wrapper, reads the
 # RID list out of its tools/net10.0/any/DotnetToolSettings.xml, and then downloads the
@@ -21,7 +16,7 @@ name: Release
 # with "Version X of package PnP.PowerShell.MCPServer.win-x64 is not found in NuGet feeds".
 #
 # The trap: with <PublishAot>true</PublishAot>, a plain `dotnet pack` builds ONLY the
-# wrapper and silently skips all 7 RID packages (native AOT cannot cross-compile between
+# wrapper and silently skips all 2 Windows RID packages (native AOT cannot cross-compile between
 # operating systems, so the SDK does not even try). That is how 0.1.1-beta shipped broken.
 # Each RID package therefore has to be packed on its own matching OS — hence the matrix
 # below.
@@ -102,26 +97,12 @@ jobs:
             os: windows-latest
           - rid: win-arm64
             os: windows-11-arm
-          - rid: osx-arm64
-            os: macos-latest
-          - rid: osx-x64
-            os: macos-15-intel     # last Intel macOS image; macos-13 was retired in Dec 2025
-          - rid: linux-x64
-            os: ubuntu-latest
-          - rid: linux-arm64
-            os: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Install native AOT prerequisites (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang zlib1g-dev
 
       # Packed as the version being built, so a tag or back-fill cannot ship the checked-in manifest's version.
       - name: Stamp the release version into server.json
@@ -142,43 +123,6 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: nupkg-${{ matrix.rid }}
-          path: artifacts/*.nupkg
-          if-no-files-found: error
-
-  pack-musl:
-    # linux-musl-x64 needs an Alpine toolchain. Built via `docker run` rather than a job
-    # `container:` so that checkout/upload-artifact keep running on the host runner.
-    # The `-aot` image variant already ships clang/zlib/build-base.
-    name: Pack linux-musl-x64
-    needs: version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      # Packed as the version being built, so a tag or back-fill cannot ship the checked-in manifest's version.
-      - name: Stamp the release version into server.json
-        shell: bash
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-        run: jq --arg v "$VERSION" '.version = $v | .packages |= map(.version = $v)' .mcp/server.json > server.tmp && mv server.tmp .mcp/server.json
-
-      - name: Pack linux-musl-x64 in an Alpine container
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          docker run --rm \
-            --volume "$PWD":/src \
-            --workdir /src \
-            --env PROJECT \
-            --env VERSION \
-            --env DOTNET_NOLOGO \
-            --env DOTNET_CLI_TELEMETRY_OPTOUT \
-            mcr.microsoft.com/dotnet/sdk:10.0-alpine-aot \
-            sh -ec 'dotnet pack "$PROJECT" --configuration Release --runtime linux-musl-x64 -p:PackageVersion="$VERSION" --output artifacts'
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: nupkg-linux-musl-x64
           path: artifacts/*.nupkg
           if-no-files-found: error
 
@@ -220,7 +164,7 @@ jobs:
     # Guard against re-shipping the 0.1.1-beta failure: every RID the wrapper advertises
     # must have a matching package in this build, or nothing gets published.
     name: Verify package set
-    needs: [version, pack-rid, pack-musl, pack-wrapper]
+    needs: [version, pack-rid, pack-wrapper]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8

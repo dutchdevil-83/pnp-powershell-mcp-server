@@ -6,17 +6,17 @@ using System.Threading.Channels;
 
 namespace PnPPowerShell.MCPServer.Services;
 
-/// <summary>A long-lived <c>pwsh</c> child process that executes scripts one at a time.</summary>
+/// <summary>A long-lived Windows PowerShell 5.1 child process that executes scripts one at a time.</summary>
 // One process across calls is what lets a Connect-PnPOnline connection survive: PnP holds it in process
 // memory, so the old process-per-call model dropped it and status always read "not connected".
 // An in-proc runspace is not an option under native AOT, so this drives a child process over stdin.
 internal sealed class PowerShellSession : IAsyncDisposable
 {
     private const string PwshMissingMessage =
-        "Error: Could not launch 'pwsh'. Install PowerShell 7.4 or above from https://aka.ms/powershell and ensure it is available on PATH.";
+        "Error: Windows PowerShell 5.1 is not available at its standard Windows path. This server requires Windows.";
 
     private static readonly string ModuleMissingMessage =
-        $"Error: The PnP.PowerShell module is not installed. Install it by running: {Tools.PnPPowerShellTools.InstallModuleCommand(prerelease: false)}";
+        $"Error: The SharePointPnPPowerShellOnline module is not installed. Install it by running: {Tools.PnPPowerShellTools.InstallModuleCommand(prerelease: false)}";
 
     private const string SessionEndedMessage =
         "Error: The PowerShell session ended unexpectedly. Retry the command; the PnP connection will need to be re-established.";
@@ -213,7 +213,7 @@ internal sealed class PowerShellSession : IAsyncDisposable
 
         var startInfo = new ProcessStartInfo
         {
-            FileName = "pwsh",
+            FileName = PowerShellRuntime.ExecutablePath,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -223,7 +223,7 @@ internal sealed class PowerShellSession : IAsyncDisposable
             StandardErrorEncoding = Encoding.UTF8,
         };
 
-        // "-Command -" makes pwsh read statements from stdin without emitting an interactive prompt.
+        // "-Command -" makes Windows PowerShell read statements from stdin without an interactive prompt.
         startInfo.ArgumentList.Add("-NoLogo");
         startInfo.ArgumentList.Add("-NoProfile");
         startInfo.ArgumentList.Add("-NonInteractive");
@@ -253,11 +253,10 @@ internal sealed class PowerShellSession : IAsyncDisposable
         const string initScript = """
             $global:ErrorActionPreference = 'Stop'
             $global:ProgressPreference = 'SilentlyContinue'
-            if ($PSStyle) { $PSStyle.OutputRendering = 'PlainText' }
-            if (-not (Get-Module -ListAvailable -Name PnP.PowerShell)) {
+            if (-not (Get-Module -ListAvailable -Name SharePointPnPPowerShellOnline)) {
               Write-Output '__PNP_MODULE_MISSING__'
             } else {
-              Import-Module PnP.PowerShell -ErrorAction Stop
+              Import-Module SharePointPnPPowerShellOnline -DisableNameChecking -ErrorAction Stop
               Write-Output '__PNP_MODULE_READY__'
             }
             """;
@@ -385,7 +384,7 @@ internal sealed class PowerShellSession : IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
-            // A pwsh process reading from a pipe cannot be interrupted the way Ctrl+C interrupts a
+            // A PowerShell process reading from a pipe cannot be interrupted the way Ctrl+C interrupts a
             // console, so the only way out of a runaway command is to end the session.
             Terminate();
             var limit = timeout.TotalMinutes >= 1
@@ -557,7 +556,7 @@ internal sealed class PowerShellSession : IAsyncDisposable
             {
                 process.Kill(entireProcessTree: true);
 
-                // Kill only signals, so wait, bounded: a retired session's slot must not free while pwsh lives.
+                // Kill only signals, so wait, bounded: a retired session's slot must not free while PowerShell lives.
                 process.WaitForExit(TimeSpan.FromSeconds(5));
             }
         }

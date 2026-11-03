@@ -1,25 +1,20 @@
 # Releasing
 
-## A release is eight packages, not one
+## A release is three packages, not one
 
 This project is packed as a **RID-specific .NET tool**: the csproj sets
-`<RuntimeIdentifiers>` (7 RIDs) together with `<SelfContained>`, `<PublishAot>` and
+`<RuntimeIdentifiers>` (2 Windows RIDs) together with `<SelfContained>`, `<PublishAot>` and
 `<PackAsTool>`. That combination makes `dotnet pack` produce a *set* of packages:
 
 | Package | Size | Contents |
 | --- | --- | --- |
-| `PnP.PowerShell.MCPServer` | ~20 KB | The **wrapper**. No binaries — just `tools/net10.0/any/DotnetToolSettings.xml`, which lists the RID package for each platform. |
+| `PnP.PowerShell.MCPServer` | ~20 KB | The **wrapper**. No binaries — just `tools/net10.0/any/DotnetToolSettings.xml`, which lists the RID package for each supported Windows architecture. |
 | `PnP.PowerShell.MCPServer.win-x64` | ~35–80 MB | The real native executable, at `tools/any/win-x64/PnPPowerShell.MCPServer.exe` |
 | `PnP.PowerShell.MCPServer.win-arm64` | " | " |
-| `PnP.PowerShell.MCPServer.osx-arm64` | " | " |
-| `PnP.PowerShell.MCPServer.osx-x64` | " | " |
-| `PnP.PowerShell.MCPServer.linux-x64` | " | " |
-| `PnP.PowerShell.MCPServer.linux-arm64` | " | " |
-| `PnP.PowerShell.MCPServer.linux-musl-x64` | " | " |
 
 `dotnet tool install --global PnP.PowerShell.MCPServer` resolves the wrapper, reads the
 RID list out of `DotnetToolSettings.xml`, and downloads the package matching the user's
-machine. **All eight must be on NuGet.org.** If a RID package is missing, users on that
+machine. **All three must be on NuGet.org.** If a RID package is missing, users on that
 platform get:
 
 ```text
@@ -47,14 +42,14 @@ packed **on its own matching OS**, with `--runtime <rid>`.
 1. Refresh the vendored indexes, and commit whatever changes:
 
    ```powershell
-   pwsh ./build/Update-VendoredData.ps1    # samples + cmdlet names, from GitHub
-   pwsh ./build/Update-CommandIndex.ps1    # search corpus, from the installed PnP.PowerShell
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./build/Update-CommandIndex.ps1 -OutputDirectory ./data
+   pwsh ./build/Update-VendoredData.ps1 -SkipSamples -OutputDirectory ./data
+   pwsh ./build/Update-VendoredData.ps1 -OutputDirectory ./data
    ```
 
    Skipping this ships a stale index, and it fails *silently*: `pnp-index.json` still loads and still
    answers, it just describes an older module and says so in a footer nobody reads. Check the printed
-   `moduleVersion` is the release you expect. `Update-CommandIndex.ps1` needs `PnP.PowerShell` installed
-   locally; `Update-VendoredData.ps1` needs network and, for a higher rate limit, `GITHUB_TOKEN`.
+   `moduleVersion` is the release you expect. `Update-CommandIndex.ps1` needs Windows PowerShell 5.1 and `SharePointPnPPowerShellOnline` installed locally; `Update-VendoredData.ps1` needs network and, for a higher rate limit, `GITHUB_TOKEN`.
 
 2. Bump `<PackageVersion>` in `PnPPowerShell.MCPServer.csproj` and **both** `version`
    fields in [.mcp/server.json](./.mcp/server.json) — the top-level one and the one under
@@ -77,7 +72,7 @@ packed **on its own matching OS**, with `--runtime <rid>`.
    [MCP Registry](#mcp-registry) below.
 
 To do a dry run, use **Actions → Release → Run workflow** with `publish` unchecked: it
-builds all eight and uploads them as workflow artifacts without pushing anything.
+builds all three and uploads them as workflow artifacts without pushing anything.
 
 ### Credentials: NuGet trusted publishing
 
@@ -89,11 +84,11 @@ hour. Two things must be in place:
 | Where | What |
 | --- | --- |
 | Repository secret `NUGET_USER` | The nuget.org **username** (profile name, not email address) of the account that created the policy below. |
-| nuget.org → your username → **Trusted Publishing** | A policy with Repository Owner `pnp`, Repository `pnp-powershell-mcp-server`, Workflow File `release.yml` (file name only) and Environment left empty. Its owner must be the user or organisation that owns `PnP.PowerShell.MCPServer` and the seven RID packages. |
+| nuget.org → your username → **Trusted Publishing** | A policy with Repository Owner `pnp`, Repository `pnp-powershell-mcp-server`, Workflow File `release.yml` (file name only) and Environment left empty. Its owner must be the user or organisation that owns `PnP.PowerShell.MCPServer` and the two RID packages. |
 
 - **Glob scope.** If you narrow the policy with a package glob, it **must** cover the RID ids
   (`PnP.PowerShell.MCPServer*`). A policy scoped only to the exact id
-  `PnP.PowerShell.MCPServer` pushes the wrapper and rejects all seven RID packages, which
+  `PnP.PowerShell.MCPServer` pushes the wrapper and rejects both RID packages, which
   reproduces the original bug.
 - **Renaming `release.yml`** breaks the policy.
 - **Environment.** Enabling the commented-out `environment:` on the `publish` job needs the
@@ -151,7 +146,7 @@ ask each new user a series of questions.
 that defaults to `false`:
 
 - `PNP_MCP_READONLY`: whether the server may change the tenant.
-- `PNP_MCP_ALLOW_SETUP`: whether it may install `PnP.PowerShell` on a machine that lacks it.
+- `PNP_MCP_ALLOW_SETUP`: whether it may install the archived `SharePointPnPPowerShellOnline` module on a machine that lacks it.
 
 The others stay out:
 
@@ -200,34 +195,18 @@ error. Two follow-ups worth doing:
 - **Unlist** `0.1.0-beta` and `0.1.1-beta` on NuGet.org (Manage package → Listing). Unlisting
   hides them from search and from `--prerelease` resolution while leaving existing pins working.
 - Optionally **back-fill** them instead: NuGet packages are immutable so the wrapper cannot be
-  replaced, but the seven RID package *ids* were never pushed at all, so they can still be
+  replaced, but the seven legacy RID package *ids* were never pushed at all, so they can still be
   published under those old versions. Run **Actions → Release → Run workflow** with
   `version` = `0.1.1-beta` and `publish` = checked — the duplicate wrapper push is skipped
-  and the seven RID packages go up, repairing that version in place.
+  and the two RID packages go up, repairing that version in place.
 
 ## Manual fallback
 
-Only needed if the workflow is unavailable. One machine **cannot** produce all seven —
-run the matching command on each OS:
+Only needed if the workflow is unavailable. Run these commands on Windows x64 and Windows ARM64:
 
-```bash
-# on Windows x64 / Windows arm64 (needs VS "Desktop development with C++")
-dotnet pack PnPPowerShell.MCPServer.csproj -c Release -r win-x64   -o artifacts
+```powershell
+dotnet pack PnPPowerShell.MCPServer.csproj -c Release -r win-x64 -o artifacts
 dotnet pack PnPPowerShell.MCPServer.csproj -c Release -r win-arm64 -o artifacts
-
-# on macOS (Xcode command line tools)
-dotnet pack PnPPowerShell.MCPServer.csproj -c Release -r osx-arm64 -o artifacts
-dotnet pack PnPPowerShell.MCPServer.csproj -c Release -r osx-x64   -o artifacts
-
-# on Linux (clang + zlib1g-dev)
-dotnet pack PnPPowerShell.MCPServer.csproj -c Release -r linux-x64   -o artifacts
-dotnet pack PnPPowerShell.MCPServer.csproj -c Release -r linux-arm64 -o artifacts
-
-# musl, via the Alpine AOT SDK image
-docker run --rm -v "$PWD":/src -w /src mcr.microsoft.com/dotnet/sdk:10.0-alpine-aot \
-  dotnet pack PnPPowerShell.MCPServer.csproj -c Release -r linux-musl-x64 -o artifacts
-
-# the RID-agnostic wrapper (any machine)
 dotnet pack PnPPowerShell.MCPServer.csproj -c Release -o artifacts
 ```
 

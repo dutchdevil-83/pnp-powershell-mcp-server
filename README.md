@@ -4,21 +4,21 @@
 
 ## 💡 Description
 
-This MCP server allows the use of natural language to run [PnP PowerShell](https://pnp.github.io/powershell/) commands and to author complex PnP PowerShell scripts. It may handle complex prompts that are executed as a chain of PnP PowerShell cmdlets that try to fulfill the user's request, and it can search the community's [PnP Script Samples](https://pnp.github.io/script-samples/) library for ready-to-adapt scripts. This way you can manage many different areas of Microsoft 365 — SharePoint Online, Microsoft Teams, Entra ID, OneDrive, Planner, Power Platform, Microsoft 365 Groups, taxonomy, search, and tenant administration — straight from your MCP client, and use it as a jump-start for writing your own automation scripts.
+This MCP server runs the archived `SharePointPnPPowerShellOnline` cmdlets in Windows PowerShell 5.1. It can search the module's local command help, execute commands against SharePoint Online, and help author scripts that use the legacy cmdlet set. It also searches community PnP Script Samples; review sample compatibility before running them because the catalogue may contain scripts written for the newer module.
 
 ## 📦 Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download) (only required to build/run from source — published tool releases are self-contained)
-- [PowerShell 7.4 or above](https://aka.ms/powershell) (`pwsh`) installed and available on `PATH`
-- The [`PnP.PowerShell`](https://www.powershellgallery.com/packages/PnP.PowerShell) module installed:
+- Windows with Windows PowerShell 5.1 enabled
+- The archived [`SharePointPnPPowerShellOnline`](https://www.powershellgallery.com/packages/SharePointPnPPowerShellOnline) module installed:
 
   ```powershell
-  Install-Module -Name PnP.PowerShell -Scope CurrentUser -Force -AllowClobber
+  Install-Module -Name SharePointPnPPowerShellOnline -Scope CurrentUser -Force
   ```
 
 ## 🚀 Installation & Usage
 
-This MCP server shells out to the locally installed [PnP PowerShell](https://pnp.github.io/powershell/) module — it does not do any authentication for you. Authenticate first using `Connect-PnPOnline` (see [Best Practices](./best-practices.md) for the recommended auth methods), then the MCP server will reuse the same PnP PowerShell connection context.
+This server starts a persistent Windows PowerShell 5.1 process and imports `SharePointPnPPowerShellOnline`. It does not authenticate for you. Use `pnp_diagnose_connection` and the installed module's `Connect-PnPOnline` help to choose an authentication mode supported by your tenant and this legacy module.
 
 - **TYPE**: `Local` (stdio)
 - **INSTALL**: [![Install PnP PowerShell MCP in VS Code](https://img.shields.io/badge/VS_Code-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=pnp-powershell&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22pnp-powershell-mcp-server%22%7D) [![Install PnP PowerShell MCP in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=pnp-powershell&config=%7B%22type%22%3A%22stdio%22%2C%22command%22%3A%22pnp-powershell-mcp-server%22%7D&quality=insiders) [![Install PnP PowerShell MCP in Visual Studio](https://img.shields.io/badge/Visual_Studio-C16FDE?style=flat-square&logo=visualstudio&logoColor=white)](https://aka.ms/vs/mcp-install?%7B%22name%22%3A%22pnp-powershell%22%2C%22type%22%3A%22stdio%22%2C%22command%22%3A%22pnp-powershell-mcp-server%22%7D) [![Install PnP PowerShell MCP in Cursor](https://img.shields.io/badge/Cursor-000000?style=flat-square&logo=cursor&logoColor=white)](https://cursor.com/install-mcp?name=pnp-powershell&config=eyJ0eXBlIjoic3RkaW8iLCJjb21tYW5kIjoicG5wLXBvd2Vyc2hlbGwtbWNwLXNlcnZlciJ9) [![Install PnP PowerShell MCP in Claude Code](https://img.shields.io/badge/Claude_Code-Install-orange?style=flat-square&logo=claude&logoColor=white)](#add-to-claude-code)
@@ -31,7 +31,7 @@ This MCP server shells out to the locally installed [PnP PowerShell](https://pnp
 dotnet tool install --global PnP.PowerShell.MCPServer --prerelease
 ```
 
-This installs a self-contained, native AOT executable named `pnp-powershell-mcp-server` on your `PATH`. Supported platforms: Windows (x64, arm64), macOS (arm64, x64) and Linux (x64, arm64, musl x64).
+This installs a self-contained, native AOT executable named `pnp-powershell-mcp-server` on your `PATH`. The server supports Windows x64 and arm64 only because the legacy PnP module requires Windows PowerShell 5.1.
 
 To update an existing install:
 
@@ -68,6 +68,14 @@ As a result, you should have the following configuration in your `.vscode/mcp.js
 ```
 
 Now when you open the GitHub Copilot chat in VS Code, you should be able to select the `PnP PowerShell MCP Server` from the list of available MCP servers and start using it to manage Microsoft 365 using natural language. In the prompt specify that "Using PnP PowerShell, I want you to..." and GitHub Copilot Agent will use the MCP server to execute your request.
+
+### Use as a Copilot agent plugin
+
+Chat participants are not supported by the Copilot harness. This repository provides an Agent Plugins 1.0 package with a PnP workflow skill and this MCP server, so Copilot can use the server's tools without an `@participant` integration.
+
+Install the `copilot-plugin` directory as a local plugin in a compatible Copilot client. Install the `pnp-powershell-mcp-server` .NET tool first and make sure it is on the Windows client host's `PATH`. The plugin skill is available as `/pnp-powershell:manage-microsoft-365`. The server uses local Windows PowerShell 5.1 and `SharePointPnPPowerShellOnline`; the plugin does not provide credentials or bypass tool approvals.
+
+For VS Code, add the plugin from the local `copilot-plugin` directory through the Agent Plugins experience, then start a new Copilot session and confirm its MCP server and skill are listed. For other clients, follow their local plugin installation steps and verify support for Agent Plugins 1.0.
 
 ### Add to GitHub Copilot CLI
 
@@ -193,21 +201,21 @@ Can you check if I have a Power Automate flow called 'HoursReportingReminder' an
 
 | Tool | Description |
 | --- | --- |
-| pnp_search_commands | Finds which cmdlet does a job. Scores a compiled-in index of every cmdlet — name, verb, noun, synopsis, description, parameters and examples — with field-weighted BM25, so a plain-language question like "add a column to a list" finds `Add-PnPField`. Answers entirely in process: no `pwsh`, no session and no network, so it works on a machine that is not set up yet. Returns structured content alongside the text, and states the module version it was indexed from. |
-| pnp_get_command_docs | Gets the reference documentation for one named cmdlet — syntax, parameters, parameter sets and examples — preceded by links to both the raw markdown source of its documentation page and the rendered HTML page. The markdown is the same content for a fraction of the tokens. |
+| pnp_search_commands | Finds commands from a compiled index of `SharePointPnPPowerShellOnline`, including names, synopsis, parameters, and examples. Answers without launching PowerShell or contacting a tenant, and reports the indexed legacy module version. |
+| pnp_get_command_docs | Gets syntax, parameters, and examples from the installed legacy module's local help. Check that result before using documentation for the newer module. |
 | pnp_run_command | Runs PnP PowerShell against the connected tenant and returns the result. Runs in a persistent session, so a `Connect-PnPOnline` connection is reused across calls. Destructive commands require confirmation first. A result set too large for the output cap is summarised and paged rather than truncated. |
 | pnp_get_result_page | Returns the next page of a result set `pnp_run_command` summarised. Pages over rows already fetched, so it costs nothing against the tenant and returns exactly the rows the original command saw. |
 | pnp_get_connection_status | Checks whether the session is signed in, to which site, and as which account. |
-| pnp_diagnose_connection | Checks everything that has to be true before a command can run: `pwsh` on `PATH`, the `PnP.PowerShell` module, what connection the session holds, and — when it holds none — which app registration, persisted login or certificate this machine can actually sign in with. Every failing check names its cause and the exact next command, with no placeholder left in it where the facts can fill one in. Pass `targetUrl` to get the command for a specific site. The `pwsh`, module and auth-material checks need no tenant and no network, so it still works on a machine that is not set up yet; once a connection exists it also inspects that connection, which asks PnP for a Graph token and so reaches Entra ID. |
+| pnp_diagnose_connection | Checks Windows PowerShell 5.1, the legacy module, and the session connection. It does not inspect modern PnP credential stores or assume a sign-in method. Pass `targetUrl` for a SharePoint Online connection suggestion. |
 | pnp_reset_session | Ends a session and its PnP connection. Use it to sign out, switch accounts, or recover a session that has stopped responding. |
 | pnp_get_best_practices | Returns best practices for using PnP PowerShell via this MCP server. Takes an optional `section` (`workflow`, `docs`, `sessions`, `config`, `readonly`, `output`, `destructive`, `auth`, `execution`, `patterns`) to retrieve one topic instead of the whole guide, which keeps the response small. |
 | pnp_search_script_samples | Lists community [PnP Script Samples](https://pnp.github.io/script-samples/), plus your own from `PNP_SCRIPT_SAMPLES_PATH`, matching a keyword — titles, descriptions and links, no code. The community index is compiled into the server, so it needs no network; a Git URL in `PNP_SCRIPT_SAMPLES_PATH` is fetched on first use. |
 | pnp_get_script_sample | Retrieves the full PnP PowerShell script code for one named script sample. The index entry is local; a community script body is fetched from GitHub, and your own is read from disk. |
 | pnp_suggest_script | Finds the most relevant script samples for a task, favouring your own, and returns their full script code plus adaptation guidance, in one call. |
 | pnp_save_script_sample | Saves a script that worked as a `.ps1` in the first plain folder of `PNP_SCRIPT_SAMPLES_PATH`, with its one-line summary as `.SYNOPSIS`, so searches and suggestions find it at once. Never overwrites an existing file. |
-| pnp_ping | Returns the server version, uptime, read-only mode status, and active session count, and — unless `includeReadiness` is `false` — whether `pwsh` and the `PnP.PowerShell` module are present. Use this as a lightweight health check to confirm the server is responsive and the machine is ready. |
+| pnp_ping | Returns server version, uptime, read-only status, active session count, and optionally whether Windows PowerShell 5.1 and the legacy module are present. |
 | pnp_list_sessions | Lists all active PowerShell sessions with their status and last activity time. Use this to see what sessions exist before deciding which to connect, reset, or reuse. |
-| pnp_setup_environment | Installs the `PnP.PowerShell` module for the current user so PnP cmdlets can run, choosing the released or the latest pre-release build. It installs that one module only — it never signs in, touches the tenant, or creates an app registration — and only when `PNP_MCP_ALLOW_SETUP=true`; otherwise it returns the exact `Install-Module` command to run by hand. |
+| pnp_setup_environment | Installs only `SharePointPnPPowerShellOnline` for the current user, and only when `PNP_MCP_ALLOW_SETUP=true`; otherwise it returns the install command without changing the machine. It does not sign in or touch a tenant. |
 
 Every tool declares its `readOnlyHint`, `idempotentHint` and `openWorldHint` annotations, and the
 tools that are not read-only also declare `destructiveHint` — `true` for the two that can change
@@ -232,7 +240,7 @@ supports them can browse and cache the content instead of spending a tool call o
 
 ### Sessions and `sessionId`
 
-Commands run in a persistent `pwsh` session, so a connection made with `Connect-PnPOnline` stays
+Commands run in a persistent Windows PowerShell 5.1 session, so a connection made with `Connect-PnPOnline` stays
 alive across tool calls — you connect once rather than on every command.
 
 **You normally never set `sessionId`.** Leave it out and everything shares the session named
@@ -360,7 +368,7 @@ people who run its scripts.
 | `PNP_MCP_COMMAND_TIMEOUT_SECONDS` | `600` | Wall-clock limit for a single `pnp_run_command` call. On timeout the session is terminated and the connection is lost. |
 | `PNP_MCP_CONFIRM_DESTRUCTIVE` | `true` | Set to `false` to run destructive commands (`Remove-*`, `Clear-*`, ...) without asking for confirmation. This is the only way to bypass the gate: there is no tool parameter that lets the model approve its own destructive command, so on a client that cannot show a confirmation prompt, destructive commands are simply blocked. |
 | `PNP_MCP_READONLY` | `false` | Set to `true` to refuse any command that would change Microsoft 365. Allowed verbs: `Get-`, `Export-`, `Test-`, `Convert-`/`ConvertTo-`/`ConvertFrom-`, `Read-`, `Measure-`, `Connect-`/`Disconnect-`, `Find-`, `Format-`, `Resolve-`, `Write-`, `Search-`, `Show-`, `Compare-`, plus pipeline shaping (`Select-`, `Where-`, `Sort-`, `Group-`, `ForEach-`, `Out-`, `Join-`, `Split-`). Refused: `Set-`, `Remove-`, `Add-`, `New-`, `Clear-`, `Invoke-`, `Update-`, `Move-`, `Enable-`/`Disable-`, `Grant-`/`Revoke-`, `Copy-`, `Import-`, `Restore-`, `Reset-`, `Rename-`, `Start-`/`Stop-`, `Register-`/`Unregister-`, and every other change verb — along with indirectly invoked commands, native executables, and state-changing method calls such as `ExecuteQuery`. See [Best Practices](./best-practices.md#read-only-mode) for the full table. Local file output (`Out-File`, `Export-*`) is still permitted. |
-| `PNP_MCP_ALLOW_SETUP` | `false` | Set to `true` to let `pnp_setup_environment` install the `PnP.PowerShell` module for the current user. Left unset, that tool changes nothing and returns the `Install-Module` command for you to run by hand. It never installs anything else, signs in, or touches the tenant. |
+| `PNP_MCP_ALLOW_SETUP` | `false` | Set to `true` to let `pnp_setup_environment` install `SharePointPnPPowerShellOnline` for the current user. Left unset, it returns the install command and makes no changes. It never signs in or touches a tenant. |
 | `PNP_MCP_MAX_OUTPUT_CHARS` | `50000` | Largest tool response returned, in characters. A JSON result set over the cap is summarised — true row count, field names, and as many whole rows as fit, plus a cursor for `pnp_get_result_page` — so the response stays complete and parseable. Anything else is truncated to its first whole lines with a note saying how much was dropped. Values below 2000 are ignored, since the note itself would leave no room for output. |
 | `PNP_MCP_REPLAY_DIR` | _(unset)_ | **Testing only.** Answers every command from recorded fixtures in this directory instead of running it, so the server never reaches Microsoft 365. It announces itself on stderr when set. See [Recorded-playback tests](#recorded-playback-tests). |
 | `PNP_MCP_RECORD_DIR` | _(unset)_ | **Testing only.** Writes a scrubbed fixture for every command the server runs, into this directory. |
@@ -446,11 +454,6 @@ claude mcp add pnp-powershell --scope user \
 **In your shell**, when you want a one-off run — for example to try read-only mode without editing
 config. The client must be started *from that shell* for it to inherit the value:
 
-```bash
-# macOS / Linux
-PNP_MCP_READONLY=true code .
-```
-
 ```powershell
 # Windows PowerShell
 $env:PNP_MCP_READONLY = 'true'; code .
@@ -513,7 +516,7 @@ no network, no VS Code extension and no tenant:
 | File | Contents | Used by |
 | --- | --- | --- |
 | [data/script-samples.json](./data/script-samples.json) | The PnP Script Samples catalogue — name, title, description, tags, authors | `pnp_search_script_samples`, `pnp_get_script_sample`, `pnp_suggest_script` |
-| [data/pnp-commands.json](./data/pnp-commands.json) | Every `PnP.PowerShell` cmdlet name, with the URL templates for its markdown and HTML documentation | `pnp_get_command_docs` |
+| [data/pnp-commands.json](./data/pnp-commands.json) | Legacy cmdlet names generated from the matching command corpus; the old module does not provide reliable per-cmdlet documentation URLs | `pnp_get_command_docs` |
 | [data/pnp-index.json](./data/pnp-index.json) | The search corpus — synopsis, description, parameters, parameter sets and examples per cmdlet, plus the superseded-alias map | `pnp_search_commands` |
 
 The two whose *content* can go stale print their provenance with every answer, so a stale index is
@@ -523,12 +526,12 @@ documentation URL templates — `pnp_get_command_docs` reads the help itself fro
 installed — so there is no stale content there to warn about. Refresh all three before a release:
 
 ```powershell
-# Sample and cmdlet-name indexes, from pnp/vscode-pnp-powershell.
-pwsh ./build/Update-VendoredData.ps1
+# Search corpus from the installed legacy module. Run first so command names match it.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./build/Update-CommandIndex.ps1 -OutputDirectory ./data
 
-# Search corpus, read from the PnP.PowerShell module installed on this machine, whose version it
-# records. Requires PnP.PowerShell; takes a few seconds.
-pwsh ./build/Update-CommandIndex.ps1
+# Refresh legacy command names, then refresh the sample catalogue.
+pwsh ./build/Update-VendoredData.ps1 -SkipSamples -OutputDirectory ./data
+pwsh ./build/Update-VendoredData.ps1 -OutputDirectory ./data
 ```
 
 Because the corpus is built from an installed module rather than the caller's, `pnp_search_commands`
@@ -612,13 +615,13 @@ Wait for the inspector to start and open it in your browser. You should see the 
 dotnet publish -c Release -r win-x64 --self-contained
 ```
 
-Replace `win-x64` with your target [RuntimeIdentifier](https://learn.microsoft.com/dotnet/core/rid-catalog) (`linux-x64`, `osx-arm64`, etc.). The output is a single native executable with no .NET runtime dependency.
+The legacy module requires Windows PowerShell 5.1. Build for `win-x64` or `win-arm64`; the output is a single native executable with no .NET runtime dependency.
 
-Native AOT needs a platform toolchain: the "Desktop development with C++" workload on Windows, Xcode command line tools on macOS, or `clang` and `zlib1g-dev` on Linux.
+The server runs the archived SharePointPnPPowerShellOnline module through Windows PowerShell 5.1, so only Windows builds are supported. Native AOT needs the "Desktop development with C++" workload.
 
 ### Releasing to NuGet
 
-A release is **eight** packages — a small wrapper plus one per platform — and a plain `dotnet pack` builds only the wrapper. Do not publish by hand; see [RELEASING.md](./RELEASING.md) and use the [Release workflow](./.github/workflows/release.yml). The same workflow then lists the release on the [Official MCP Registry](https://registry.modelcontextprotocol.io/) from [`.mcp/server.json`](./.mcp/server.json).
+A release is **three** packages — a small wrapper plus Windows x64 and ARM64 packages — and a plain `dotnet pack` builds only the wrapper. Do not publish by hand; see [RELEASING.md](./RELEASING.md) and use the [Release workflow](./.github/workflows/release.yml). The same workflow then lists the release on the [Official MCP Registry](https://registry.modelcontextprotocol.io/) from [`.mcp/server.json`](./.mcp/server.json).
 
 ## Contributing to PnP PowerShell MCP Server
 
